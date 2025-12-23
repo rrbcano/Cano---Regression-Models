@@ -1,0 +1,240 @@
+---
+title: "mtcars analysis"
+output:
+  html_document: default
+  word_document: default
+date: "2025-10-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(knitr)
+library(car)
+library(ggplot2)
+
+data(mtcars)
+clean <- mtcars
+```
+$Y{1}$ = Miles per Gallon
+$X$ = Displacement, Horsepower, Read Axle Ratio, Weight, 1/4 Mile Time
+
+```{r}
+small_model <- lm(mpg ~ disp + hp + drat, data = clean)
+big_model <- lm(mpg ~ disp + hp + drat + wt + qsec, data = clean)
+
+summary_small <- summary(small_model)
+summary_big <- summary(big_model)
+summary_small
+summary_big
+```
+
+```{r}
+compare <- data.frame(
+  model = c("smaller model", "bigger model"),
+  R2_adj <- c(summary_small$adj.r.squared, summary_big$adj.r.squared)
+)
+kable(compare, digits=4, caption = "R squared adjusted Model Comparison")
+
+if (compare$R2_adj[2] > compare$R2_adj[1]) {
+  print("The bigger model is preferred based on a higher adjusted R-squared.")
+} else {
+  print("The smaller model is preferred based on a higher adjusted R-squared.")
+}
+```
+```{r}
+
+set.seed(40)
+
+mtcars$X3 <- 1.5*mtcars$wt-0.5*mtcars$disp+rnorm(nrow(mtcars), sd=0.1)
+
+head(mtcars)
+mtcars$X3
+
+#Model Fitting with created X3
+multi_model <- lm(mpg ~ wt + disp + X3, data = mtcars)
+summary(multi_model)
+
+```
+```{r}
+library(car)
+set.seed(40) 
+data(mtcars)
+n <- nrow(mtcars)
+
+mtcars$X3 <- 1.5 * mtcars$wt - 0.5 * mtcars$disp + rnorm(n, sd = 0.1)
+
+Y <- mtcars$mpg
+X1 <- mtcars$wt
+X2 <- mtcars$disp
+X3 <- mtcars$X3
+
+Y1_model <- lm(Y ~ X1 + X2, data = mtcars)
+summ_Y1 <-summary(Y1_model)
+summ_Y1
+
+Y2_model <- lm(Y ~ X1 + X2 + X3, data = mtcars)
+summ_Y2 <- summary(Y2_model)
+summ_Y2
+
+#compare Yi models
+R2_adjY1 <- summ_Y1$adj.r.squared
+R2_adjY2 <- summ_Y2$adj.r.squared
+
+comparison_df <- data.frame(
+  Model = c("Y1 (X1, X2)", "Y2 (X1, X2, X3)"),
+  R2 = c(summ_Y1$r.squared, summ_Y2$r.squared),
+  R2_Adjusted = c(R2_adjY1, R2_adjY2)
+)
+
+kable(comparison_df, digits = 4, caption = "Model Fit Comparison")
+```
+```{r}
+anova <- anova(Y1_model, Y1_model)
+anova
+
+pvalue_X3 <- anova$`Pr(>F)`[2]
+pvalue_X3
+
+vif_Y2 <- vif(Y2_model)
+vif_Y2
+```
+There are high VIF values for X1, X2, and X3 which confirm that they are linearly independent. This displays severe multicollinearity. 
+```{r}
+n <- 120
+
+b1 <- 1.5
+b2 <- -0.5
+
+var_1 <- 0.04
+sigma_1 <- sqrt(var_1)
+
+X1 <- rnorm(n, mean = 0, sd = 1)
+X1 
+
+X2 <- runif(n, min = 5, max = 15)
+X2
+
+error <- rnorm(n, mean = 0, sd = sigma_1)
+
+X3 <- b1 * X1 + b2 * X2 + error
+data_frame <- data.frame(X1, X2, X3)
+
+head(data_frame)
+print(cor(1.5 * X1 - 0.5 * X2, X3))
+```
+```{r}
+set.seed(50)
+n <- 32
+
+mtcars$Y <- mtcars$mpg
+mtcars$X1 <- mtcars$wt
+mtcars$X2 <- mtcars$disp
+
+model_foundation <- lm(Y ~ X1 + X2, data = mtcars)
+summary_model <- summary(model_foundation)
+
+n_obs <- nrow(mtcars)
+a1 <- coef(model_foundation)["X1"]
+a2 <- coef(model_foundation)["X2"]
+
+sigma2_hat <- summary_model$sigma^2 
+
+a1
+a2
+```
+```{r}
+a1_fixed <- -3.350825 
+a2_fixed <- -0.01772474 
+
+mtcars$Y1_model <- a1_fixed* mtcars$X1 + 
+                       a2_fixed * mtcars$X2 + 
+                       rnorm(n, mean = 0, sd = sigma_1)
+
+if (!"X1" %in% names(mtcars)) {mtcars$X1 <- mtcars$wt}
+if (!"X2" %in% names(mtcars)) {mtcars$X2 <- mtcars$disp}
+
+mtcars$Y1_model <- a1_fixed * mtcars$X1 + 
+                    a2_fixed * mtcars$X2 + 
+                    rnorm(n, mean = 0, sd = sigma_1)
+print(head(mtcars$Y1_model, 5))
+```
+
+```{r}
+a3_fixed <- 2.5
+sigma2_1_fixed <- 9.771   
+sigma_1 <- sqrt(sigma2_1_fixed)
+
+Fit_Y1 <- lm(Y1_model ~ X1 + X2, data = mtcars)
+print(summary(Fit_Y1))
+
+
+mtcars$Y2_model <- a1_fixed * mtcars$X1 + 
+                       a2_fixed * mtcars$X2 + 
+                       a3_fixed * mtcars$X3 + 
+                       rnorm(n, mean = 0, sd = sigma2_1_fixed)
+Fit_Y2 <- lm(Y2_model ~ X1 + X2 + X3, data = mtcars)
+print(summary(Fit_Y2))
+
+```
+
+```{r}
+beta1_hat_Y1 <- coef(Fit_Y1)["X1"]
+beta2_hat_Y1 <- coef(Fit_Y1)["X2"]
+
+beta1_hat_Y2 <- coef(Fit_Y2)["X1"]
+beta2_hat_Y2 <- coef(Fit_Y2)["X2"]
+beta3_hat_Y2 <- coef(Fit_Y2)["X3"]
+
+beta_Y2_SE <- summary(Fit_Y2)$coefficients[, "Std. Error"]
+SE1_Y2 <- beta_Y2_SE["X1"]
+SE2_Y2 <- beta_Y2_SE["X2"]
+SE3_Y2 <- beta_Y2_SE["X3"]
+
+comparison_Y1 <- data.frame(
+  Parameter = c("a1 (X1/wt)", "a2 (X2/disp)"),
+  True_Value = c(a1_fixed, a2_fixed),
+  Estimated_OLS = c(beta1_hat_Y1, beta2_hat_Y1),
+  Difference = c(beta1_hat_Y1 - a1_fixed, beta2_hat_Y1 - a2_fixed)
+)
+row.names(comparison_Y1) <- NULL
+
+comparison_Y2 <- data.frame(
+  Parameter = c("a1 (X1/wt)", "a2 (X2/disp)", "a3 (X3)"),
+  True_Value = c(a1_fixed, a2_fixed, a3_fixed),
+  Estimated_OLS = c(beta1_hat_Y2, beta2_hat_Y2, beta3_hat_Y2),
+  Standard_Error = c(SE1_Y2, SE2_Y2, SE3_Y2),
+  Difference = c(beta1_hat_Y2 - a1_fixed, beta2_hat_Y2 - a2_fixed, beta3_hat_Y2 - a3_fixed)
+)
+row.names(comparison_Y2) <- NULL
+```
+
+```{r}
+vif_Y1 <- vif(Fit_Y1)
+print(vif_Y1)
+
+vif_Y2 <- vif(Fit_Y2)
+print(vif_Y2)
+```
+```{r}
+n_vary <- c(32, 200, 500)
+
+b1_vary <- c(1.5, 0)
+b2_vary <- c(-0.5, 0)
+
+a1_fixed <- 2.0
+a2_fixed <- 3.0
+sigma2_vary <- c(0.5, 5.0)
+
+scenario_grid <- expand.grid(
+  n_obs = n_vary,
+  sigma2 = sigma2_vary,
+  b1 = b1_vary,
+  b2 = b2_vary
+)
+
+```
+
