@@ -1,0 +1,187 @@
+---
+title: "Cano - MAT 495 Final Project"
+output:
+  pdf_document: default
+  html_document: default
+date: "2025-12-17"
+---
+
+# Using Bone Measurement for Forensic Identification
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(gclus)
+library(dplyr)
+library(ggplot2)
+library(pROC)
+library(glmnet)
+```
+
+
+
+```{r}
+
+# uploading data set
+data(body)
+str(body)
+summary(body)
+
+body$Gender <- factor(body$Gender)
+
+
+```
+
+
+## Part 1 | Predicting Gender
+
+```{r}
+
+#PCA (principal component analysis)
+bone_vars <- body %>%
+  select(-Gender, -Height, -AbdG, -Age) %>%
+  mutate(across(everything(), as.numeric))
+
+pca_fit <- prcomp(bone_vars, scale. = TRUE)
+
+summary(pca_fit)
+
+```
+
+```{r}
+# creating PCA dataset using first 3 PCAs
+pca_data <- data.frame(
+  Gender = body$Gender,
+  PC1 = pca_fit$x[,1],
+  PC2 = pca_fit$x[,2],
+  PC3 = pca_fit$x[,3]
+)
+
+pca_data
+```
+```{r}
+# logistic regression with PC1
+glm_pc1 <- glm(Gender ~ PC1, family = binomial, data = pca_data)
+summary(glm_pc1)
+```
+
+```{r}
+# logistic regession with PC1 and PC2
+glm_pc12 <- glm(Gender ~ PC1 + PC2, family = binomial, data = pca_data)
+summary(glm_pc12)
+```
+
+```{r}
+# logistic regression with PC3 added
+glm_pc123 <- glm(Gender ~ PC1 + PC2 + PC3, family = binomial, data = pca_data)
+summary(glm_pc123)
+```
+
+```{r}
+# Using AIC to compare the models above. 
+AIC(glm_pc1, glm_pc12, glm_pc123)
+```
+
+A lower AIC suggests a better statistical model because it provides better balance between fitting the data and not being too complex. We can see that the third logistic regression model is the best with the lowest AIC. This model included PC1, PC2, and PC3. 
+
+```{r}
+# Manual Classification
+prob_pc12 <- predict(glm_pc12, type = "response")
+pred_class <- ifelse(prob_pc12 > 0.5, "1", "0")
+table(Predicted = pred_class, Actual = body$Gender)
+```
+
+```{r}
+#ROC curve of predicted probabilities
+roc_glm <- roc(body$Gender, prob_pc12)
+plot(roc_glm, main = "Figure 1: ROC Curve Logistic Regression (PC1 + PC2)")
+auc(roc_glm)
+```
+From this curve, we can see that there is a high predictive performance. The curve rises vertically to the top-left corner which indicated high sensitivity. In other words, there are low false positive rates, which is good. From this curve, we can infer that the model with PC1 and PC2 is very informative for gender classification. 
+
+```{r}
+# Homemade ROC curve
+
+y <- as.numeric(body$Gender) - 1
+cutoffs <- seq(0, 1, by = 0.01)
+
+tpr <- fpr <- numeric(length(cutoffs))
+
+for (i in seq_along(cutoffs)) {
+  
+  y_pred <- ifelse(prob_pc12 > cutoffs[i], 1, 0)
+  
+  tab <- table(
+    factor(y_pred, levels = c(0,1)),
+    factor(y, levels = c(0,1))
+  )
+  
+  tpr[i] <- tab["1","1"] / sum(tab[,"1"])
+  
+  fpr[i] <- tab["1","0"] / sum(tab[,"0"])
+}
+
+plot(fpr, tpr, type = "l",
+     xlab = "False Positive Rate",
+     ylab = "True Positive Rate",
+     main = "Figure 2: Homemade ROC Curve")
+
+abline(0, 1, lty = 2)
+
+
+```
+This curve flows toward the top-left corner, high on the True Positive axis. This validates our results we have gotten from our ROC curve in Figure 1. Although we can see that changing the threshold affects false positive and true positive outcomes. 
+
+```{r}
+# gender prediction using glmnet
+x <- as.matrix(bone_vars)
+y <- as.numeric(body$Gender) - 1
+
+# Variable selection using glmnet
+cv_fit <- cv.glmnet(x, y, family = "binomial")
+plot(cv_fit)
+
+```
+This cross validation plot shows binomial deviance for the penalized logistic regression models. The minimum point indicates the optimal balance between model complexity and predictive accuracy. As the penalty increases, less informative bone measurements are effectively removed from the model, improving stability without sacrificing performance.
+
+```{r}
+#probabilities using optimal lambda
+prob_glmnet <- predict(cv_fit, x, s = "lambda.min", type = "response")
+
+roc_glmnet <- roc(y, as.vector(prob_glmnet))
+plot(roc_glmnet, main = "Figure 3: ROC Curve: glmnet")
+auc(roc_glmnet)
+```
+This curve shows that the penalized logistic regression model has slightly better classification than the standard logistic regression model. The strong separation or deviation from the diagonal line represents a solid separation between genders. Vairable selection through penalization is more reliable for this gender classification model. 
+
+## Part 2 | Multiple Regression: Quantitative Outcome Variable
+
+```{r}
+# multiple regression model for Height
+full_height <- lm(Height ~ ., data = body)
+step_height <- step(full_height, direction = "both") #Variable selection using AIC
+summary(step_height)
+```
+
+```{r}
+# multiple regression for abdominal girth
+full_abdG <- lm(AbdG ~ ., data = body)
+step_abdG <- step(full_abdG, direction = "both") #Variable selection
+summary(step_abdG)
+```
+
+### Executive Summary
+
+The goal of this project was to first use bone measurements to predict the gender of the individual. We then wanted to predict height and abdominal girth. It is important to use valuable quantitative information from skeletal measurements for unidentified individuals when other physical evidence is limited. This analysis was done to try and determine whether bone measurements can be used to reliably predict gender, height, and abdominal girth.  
+
+The first part was to focus on gender classification, where gender was treated as a categorical outcome through logistic regression and classification methods. The second part of the analysis was to treat height and abdominal girth as quantitative outcomes that would be developed through multiple regression models to find which bone measurements are more informative for prediction of these variables. All regression models and analyses were done in R Markdown for your visibility.  
+
+For predicting gender using skeletal measurements, the goal was to use Principal Component Analysis (PCA) to simplify the skeletal data by combining related bone measurements into a handful of independent summaries. The principal components represent dominant patterns in bone structure which allows the model to predict gender without multicollinearity.  
+
+In our logistic regression, we considered three main models; a model with PC1, a model with PC1and PC2, and lastly, a model with all three PCA models. The comparisons of these models were done by Akaike’s Information Criterion (AIC) which showed that the model with PC1 and PC2 had the most predictive power, although PC3 did provide some improvement as well. This suggests that the main skeletal features are enough to accurately determine gender. 
+
+Through manual classification, individuals were organized into a gender category using a probability cutoff of 0.5. The importance of this step was to minimize false positives over false negatives using the logistic regression model of PC1 and PC2. Once we made Receiver Operating Characteristic (ROC) Curves, it was evident that the regression model performs substantially better than random classification. The homemade ROC curve shows how classification accuracy changes when the decision threshold is moved. Building upon the ROC curve, applying penalized logistic regression onto the model was done to try and improve the model's stability and reduce overfitting. The goal is to perform variable selection to indicate that penalization can enhance validity while keeping its predictive accuracy. This was portrayed in the ROC curve built from the “glmnet” package.  Overall, both PCA-based logistic regression and penalized regression methods show excellent performance, meaning that skeletal measurements contain strong and consistent signals for gender identification. 
+
+The second part of this project focused on predicting height (M2) and abdominal girth (M3).  For both quantitative variable outcomes, multiple linear regression models were run to use bone measurements as predictors. There were many available predictors, so it was vital to have variable selection. This was done by using a stepwise model based on AIC to make it simpler while not sacrificing accuracy for the model.  
+
+For the height outcome, it was clear that certain skeletal dimensions are known to scale with height. The reduced model shows a clear relationship between the bone structure and estimated height of the individual. The abdominal girth model had different skeletal predictors than the height model. For example, the height model included predictors like chest depth while the abdominal girth did not. The differences in predictors reflect the importance of tailoring models for specific scenarios or outcomes to get the most accurate result.  
+
+This analysis showed that skeletal measurements have substantial information for inferring biological characteristics. The PCA logistic regression models and penalized models were effective for gender classification. The multiple regression model with variable selection gave a more accurate prediction of height and abdominal girth. The models run in this project offer a framework for identification efforts when only skeletal information is available.  
